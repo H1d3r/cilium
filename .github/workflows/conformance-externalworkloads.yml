@@ -175,10 +175,9 @@ jobs:
 
       - name: Install Cilium CLI
         run: |
-          curl -sSL --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${{ env.cilium_cli_version }}/cilium-linux-amd64.tar.gz{,.sha256sum}
-          sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
-          sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
-          rm cilium-linux-amd64.tar.gz{,.sha256sum}
+          docker create -ti --name cilium-cli quay.io/cilium/cilium-cli-ci:3b884e76f508bacc32d9af36b25349ec4917ab1e bash
+          docker cp cilium-cli:/usr/local/bin/cilium /usr/local/bin/cilium
+          docker rm -fv cilium-cli
           cilium version
 
       - name: Set up gcloud CLI
@@ -240,6 +239,10 @@ jobs:
         run: |
           cilium install ${{ steps.vars.outputs.cilium_install_defaults }}
 
+      - name: Wait for cilium status to be ready before enabling cluster mesh
+        run: |
+          cilium status --wait
+
       - name: Enable cluster mesh
         run: |
           cilium clustermesh enable ${{ steps.vars.outputs.clustermesh_enable_defaults }}
@@ -266,7 +269,7 @@ jobs:
       - name: Verify cluster DNS on VM
         run: |
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} \
-            --command "nslookup -norecurse clustermesh-apiserver.kube-system.svc.cluster.local"
+            --command "shopt -s extglob; dns_servers=\$(systemd-resolve --status | grep -m 1 \"Current DNS Server:\" | cut -d':' -f2); echo \$dns_servers; dns=\$(echo \"\${dns_servers##+([[:space:]])}\" | cut -d' ' -f1); echo \$dns; nslookup -norecurse -d2 clustermesh-apiserver.kube-system.svc.cluster.local \$dns"
 
       - name: Ping clustermesh-apiserver from VM
         run: |
